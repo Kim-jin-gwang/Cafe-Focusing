@@ -1,8 +1,8 @@
 # Cafe-Focusing
 
-date: 2021.10.18~2021.12.18
+### date: 2021.10.18~2021.12.18
 
-collaborator: @malangcongdduck
+### collaborator: @malangcongdduck
 
 🕋 Using python and opencv from Jupyter Lab
 
