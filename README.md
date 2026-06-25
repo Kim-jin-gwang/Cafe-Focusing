@@ -69,59 +69,6 @@ graph LR
 
 ---
 
-## 🏗️ 데이터 아키텍처 및 파이프라인 (Data Pipeline)
-
-아래 다이어그램은 `CafeFocuser` 내에서 입력 이미지가 픽셀 행렬 연산을 거쳐 최종 결과물로 가공되는 전체 데이터 흐름과 아키텍처입니다.
-
-```mermaid
-flowchart TD
-    %% Input Node
-    Input[원본 BGR 이미지] -->|1. Grayscale 변환| Gray[Grayscale 이미지]
-
-    %% Edge Detection Branch
-    subgraph 에지 검출 및 윤곽 분석 (Edge Processing)
-        Gray -->|2. cv2.Canny| Canny[Canny Edge 이미지]
-        Canny -->|3. cv2.dilate| Dilate[에지 팽창]
-        Dilate -->|4. cv2.erode| Erode[에지 침식]
-        Erode -->|5. cv2.findContours| Contours[윤곽선 군집 추출]
-        Contours -->|6. Area 정렬 및 최대 영역 선별| MaxContour[최대 면적 윤곽선]
-    end
-
-    %% Mask Creation Branch
-    subgraph 마스크 생성 및 정제 (Mask Processing)
-        MaxContour -->|7. cv2.fillConvexPoly| BinaryMask[바이너리 마스크]
-        BinaryMask -->|8. 마스크 다이레이션 & 에로전| SoftMask[마스크 경계 보정]
-        SoftMask -->|9. cv2.GaussianBlur| SmoothMask[경계면 스무딩 마스크]
-        SmoothMask -->|10. 3채널 스택화 및 정규화 / 255.0| FloatMask[알파 마스크: 0.0 ~ 1.0]
-    end
-
-    %% Image Separation & Blending Branch
-    subgraph 이미지 분리 및 합성 (Image Compositing)
-        Input & FloatMask -->|11. 전경 분리 연산| ObjectImg[오브젝트 이미지]
-        Input & FloatMask -->|12. 배경 분리 연산| BgImg[배경 이미지]
-        BgImg -->|13. cv2.blur| BlurredBg[흐려진 배경]
-        
-        %% Composite Choice
-        ObjectImg & BlurredBg -->|14. 합성 연산| Composite[최종 합성 이미지]
-    end
-
-    %% Final Output
-    Composite -->|15. 파일 저장| Output[최종 아웃포커싱 완료 이미지]
-
-    %% Styles
-    classDef io fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef process fill:#e1f5fe,stroke:#01579b,stroke-width:1.5px;
-    classDef mask fill:#efebe9,stroke:#4e342e,stroke-width:1.5px;
-    classDef blend fill:#efebe9,stroke:#2e7d32,stroke-width:1.5px;
-    
-    class Input,Output io;
-    class Gray,Canny,Dilate,Erode,Contours,MaxContour process;
-    class BinaryMask,SoftMask,SmoothMask,FloatMask mask;
-    class ObjectImg,BgImg,BlurredBg,Composite blend;
-```
-
----
-
 ## 🎯 사용한 기술 및 구현 과정
 
 최대한 가볍고 쉽게 사용할 수 있도록 인공지능의 영역분할 기술이 아닌 **opencv 함수만을 이용한 프로젝트 구현**을 목적으로 하여 **에지 검출, 에지 윤곽 검출 및 영역 정렬, 가우시안 블러** 등의 기술을 이용해 프로젝트를 진행하였습니다.
@@ -134,8 +81,9 @@ flowchart TD
 - **스무딩 및 블러**
   - 생성된 이진 마스크의 날카로운 테두리선을 부드럽게 만들기 위해 **가우시안 블러(GaussianBlur)** 및 모폴로지 가공을 거쳐 스무딩 마스크를 완성합니다.
   - 배경 영역은 피사체 대비 극적인 흐림 효과를 제공하기 위해 **평균 블러(Average Blur)**를 적용하여 아웃포커싱 처리합니다.
-- **이미지 분리 및 합성**
-  - 수학적 행렬 연산식을 통해 오브젝트와 배경을 원본으로부터 각각 독립적으로 추출한 뒤, 비트 연산(`bitwise_and`) 혹은 개선된 알파 채널 결합 기법을 사용해 합성하여 최종 결과물을 생성합니다.
+- **이미지 합성 (Blending)**
+  - **개선된 알파 블렌딩 (기본값):** 전체 원본 이미지를 흐리게 한 배경 이미지에, 3채널로 확장 후 정규화한 알파 마스크를 가중치로 적용해 선형 합성(`alpha * 원본 + (1 - alpha) * 배경`)하여 부드럽고 자연스러운 아웃포커싱 효과를 구현합니다.
+  - **레거시 합성 (옵션):** 마스크 기준으로 전경(오브젝트)과 배경을 흰색 배경 위에 독립 분리한 후, 분리된 배경을 블러 처리하고 최종적으로 두 이미지를 비트 연산(`bitwise_and`)으로 논리 병합하여 합성합니다.
 
 ---
 
@@ -155,8 +103,8 @@ flowchart TD
 
 ## 🙋‍♂️ 나의 역할
 
-- **오브젝트 및 배경 추출 연산 설계:** 마스크 데이터를 float 타입의 3차원으로 확장하고 행렬 대수 연산을 통해 원본 이미지로부터 흰색 배경 위에 객체만 독립적으로 분리하는 연산과, 객체 부분을 제거한 배경 이미지를 분리하는 연산을 전담 구현했습니다.
-- **배경 처리 및 이미지 합성 파이프라인 개발:** 추출된 배경 이미지에 최적화된 블러 커널 연산을 처리한 뒤, 분리되었던 타겟 피사체와 흐려진 배경을 수학적 픽셀 합성 연산을 거쳐 잔상 없이 완성도 높은 단일 출력 이미지로 병합하는 프로세스를 구축했습니다.
+- **알파 블렌딩 기반 이미지 합성 파이프라인 개발:** 기존 레거시 `bitwise_and` 방식에서 발생하는 경계면의 거친 테두리와 색상 번짐 문제를 해결하기 위해, 정규화된 3차원 알파 마스크를 가중치로 삼아 원본과 흐려진 전체 배경 이미지를 부드럽게 선형 결합하는 알파 블렌딩 기법을 전담 설계하고 구현했습니다.
+- **레거시 합성 지원 및 리팩토링:** 기존의 흰색 배경 기반 객체/배경 분리 및 `bitwise_and` 병합 알고리즘을 하위 호환성을 위해 `blend_legacy` 메소드로 캡슐화하고, CLI 구동부(`run.py`)에서 `--legacy` 옵션을 통해 두 합성 방식을 선택적으로 호출할 수 있도록 모듈식으로 통합 리팩토링했습니다.
 
 ---
 
@@ -180,14 +128,14 @@ flowchart TD
 * **원인:** 다각형 외곽선 마스크 픽셀의 경계가 명확하게 0과 255로 급격히 전환되는 바이너리 형태였기 때문입니다.
 * **해결방법:** 마스크에 팽창(Erode)과 침식(Dilate)을 재차 가해 테두리를 매끈하게 다듬은 후, **가우시안 블러(Gaussian Blur)**를 이용해 스무딩(Smoothing) 처리를 적용했습니다. 이로 인해 마스크의 경계선 부근에 부드러운 그라데이션 변화가 형성되어 원본 객체와 배경이 만나는 곳이 훨씬 은은하고 유기적으로 블렌딩되었습니다.
 
-### 3️⃣ 피사체와 배경의 완벽한 분리 및 합성의 어려움
-* **현상:** 배경에만 아웃포커싱을 유도할 때, 경계선 주변에서 원본 이미지의 피사체 흔적이 잔상으로 남아 흐려진 배경에 피사체의 색상이 번져 보이는 연산 간섭이 있었습니다.
-* **원인:** 픽셀 데이터가 배경과 피사체로 공간적 분리가 완전하지 못한 상태에서 중첩 연산 및 합성을 진행했기 때문입니다.
+### 3️⃣ 레거시 합성(`bitwise_and`) 사용 시 경계선 잔상 및 색상 번짐 문제
+* **현상:** 피사체와 배경을 완전히 분리하여 각각 블러 처리한 뒤 `bitwise_and` 연산으로 병합할 때, 경계선 부근에 흰색 테두리 잔상이 남거나 피사체의 색상이 번져 보이는 현상이 발생하였습니다.
+* **원인:** 픽셀 데이터를 마스크 경계에서 0과 255(또는 0.0과 1.0)로 이진화하여 분리합성하는 과정에서, 블러(Blur) 필터 적용 시 경계면 픽셀들이 뭉개지고 bitwise 논리 연산이 픽셀의 선형 변형 값을 온전히 반영하지 못했기 때문입니다.
 * **해결방법:**
-  1. 생성된 마스크 데이터를 float 타입의 3차원 채널로 변환하여 0~1 값으로 정형화합니다.
-  2. `마스크 * 원본 이미지 + (1 - 마스크) * 흰색 배경` 연산을 적용해 피사체를 배경과 독립 격리하여 단독 추출했습니다.
-  3. 마스크 밖의 배경 영역 역시 별도로 분리해낸 뒤에만 독립적인 **평균 블러(Average Blur)**를 적용해 흐림을 주었습니다.
-  4. 최종적으로 두 분리된 대상을 비트 연산(`bitwise_and`)으로 논리 병합하여 경계부 번짐 잔상이 완전히 제거된 이미지를 얻었습니다.
+  1. 기존의 객체/배경 분리 후 `bitwise_and` 합성을 하는 대신, **자연스러운 알파 블렌딩(Natural Alpha Blending)** 기법으로 전환하였습니다.
+  2. 원본 이미지 전체를 흐리게 만든 배경 이미지(`blurred_bg`)를 생성합니다.
+  3. 0~255 값의 스무딩 마스크를 0.0~1.0 사이의 알파 채널 가중치 값으로 정규화합니다.
+  4. `알파 * 원본 이미지 + (1 - 알파) * 배경 이미지` 선형 보간 연산식을 적용하여 경계선 번짐과 부자연스러운 테두리 잔상이 완벽히 제거된 부드러운 합성 결과물을 얻었습니다.
 
 ---
 
