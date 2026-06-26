@@ -1,11 +1,16 @@
 import argparse
 import sys
 import os
-from focuser import CafeFocuser
+import cv2
+
+from cafefocus.detector import ContourForegroundDetector, OtsuForegroundDetector
+from cafefocus.background import BlurBackgroundGenerator, DesaturateBackgroundGenerator, DarkenBackgroundGenerator
+from cafefocus.blender import AlphaBlender, LegacyAndBlender
+from cafefocus.pipeline import ImageFocusPipeline
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Cafe-Focusing: OpenCV-based image out-focusing utility."
+        description="Cafe-Focusing: Extensible OpenCV-based image out-focusing utility."
     )
     
     # Required arguments
@@ -39,7 +44,44 @@ def main():
         help="Directory to save intermediate steps if --save-steps is set"
     )
     
-    # Advanced parameter tweaking
+    # Detector configuration
+    parser.add_argument(
+        "--detector",
+        type=str,
+        choices=["contour", "otsu"],
+        default="contour",
+        help="Foreground detection method to use (default: contour)"
+    )
+    
+    # Background effect configuration
+    parser.add_argument(
+        "--bg-effect",
+        type=str,
+        choices=["blur", "desaturate", "darken"],
+        default="blur",
+        help="Background effect to apply (default: blur)"
+    )
+    parser.add_argument(
+        "--bg-blur-type",
+        type=str,
+        choices=["average", "gaussian"],
+        default="average",
+        help="Type of blur to apply to background (default: average)"
+    )
+    parser.add_argument(
+        "--saturation",
+        type=float,
+        default=0.3,
+        help="Saturation level for desaturated background (0.0 to 1.0, default: 0.3)"
+    )
+    parser.add_argument(
+        "--brightness",
+        type=float,
+        default=0.6,
+        help="Brightness level for darkened background (0.0 to 1.0, default: 0.6)"
+    )
+    
+    # Advanced parameter tweaking for Contour detector
     parser.add_argument(
         "--canny-low", 
         type=int, 
@@ -74,7 +116,7 @@ def main():
         "--bg-blur", 
         type=int, 
         default=13, 
-        help="Kernel size for background average blur (default: 13)"
+        help="Kernel size for background blur (default: 13)"
     )
 
     args = parser.parse_args()
@@ -88,36 +130,77 @@ def main():
         print("Error: --mask-blur must be an odd integer.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Initializing CafeFocuser with settings:")
-    print(f"  - Canny thresholds: ({args.canny_low}, {args.canny_high})")
-    print(f"  - Mask dilation/erosion iterations: {args.mask_dilate}/{args.mask_erode}")
-    print(f"  - Mask blur size: ({args.mask_blur}, {args.mask_blur})")
-    print(f"  - Background blur size: ({args.bg_blur}, {args.bg_blur})")
-    print(f"  - Blending mode: {'Legacy (Bitwise AND)' if args.legacy else 'Natural (Alpha Blend)'}")
-    print(f"Processing '{args.input}'...")
-
-    try:
-        # Instantiate focuser
-        focuser = CafeFocuser(
+    print(f"Initializing CafeFocus Pipeline...")
+    
+    # 1. Setup Detector
+    if args.detector == "contour":
+        print(f"  - Detector: ContourForegroundDetector")
+        print(f"    * Canny thresholds: ({args.canny_low}, {args.canny_high})")
+        print(f"    * Mask dilation/erosion iterations: {args.mask_dilate}/{args.mask_erode}")
+        print(f"    * Mask blur size: ({args.mask_blur}, {args.mask_blur})")
+        detector = ContourForegroundDetector(
             canny_low=args.canny_low,
             canny_high=args.canny_high,
             mask_dilate_iter=args.mask_dilate,
             mask_erode_iter=args.mask_erode,
-            mask_blur_size=(args.mask_blur, args.mask_blur),
-            bg_blur_size=(args.bg_blur, args.bg_blur)
+            mask_blur_size=(args.mask_blur, args.mask_blur)
+        )
+    else: # otsu
+        print(f"  - Detector: OtsuForegroundDetector")
+        print(f"    * Mask blur size: ({args.mask_blur}, {args.mask_blur})")
+        detector = OtsuForegroundDetector(
+            mask_blur_size=(args.mask_blur, args.mask_blur)
         )
         
-        # Execute pipeline
-        use_alpha = not args.legacy
-        mixed, all_steps = focuser.process(
+    # 2. Setup Background Generator
+    base_blur_generator = BlurBackgroundGenerator(
+        blur_type=args.bg_blur_type,
+        blur_size=(args.bg_blur, args.bg_blur)
+    )
+    
+    if args.bg_effect == "blur":
+        print(f"  - Background Effect: Blur ({args.bg_blur_type})")
+        print(f"    * Blur size: ({args.bg_blur}, {args.bg_blur})")
+        bg_generator = base_blur_generator
+    elif args.bg_effect == "desaturate":
+        print(f"  - Background Effect: Desaturate (Saturation factor: {args.saturation}) + Blur")
+        bg_generator = DesaturateBackgroundGenerator(
+            saturation_factor=args.saturation,
+            blur_generator=base_blur_generator
+        )
+    else: # darken
+        print(f"  - Background Effect: Darken (Brightness factor: {args.brightness}) + Blur")
+        bg_generator = DarkenBackgroundGenerator(
+            brightness_factor=args.brightness,
+            blur_generator=base_blur_generator
+        )
+        
+    # 3. Setup Blender
+    if args.legacy:
+        print(f"  - Blender: LegacyAndBlender (Bitwise AND)")
+        blender = LegacyAndBlender(
+            bg_blur_size=(args.bg_blur, args.bg_blur)
+        )
+    else:
+        print(f"  - Blender: AlphaBlender (Natural Alpha Blend)")
+        blender = AlphaBlender()
+
+    # 4. Construct and Run Pipeline
+    print(f"Processing '{args.input}'...")
+    try:
+        pipeline = ImageFocusPipeline(
+            detector=detector,
+            bg_generator=bg_generator,
+            blender=blender
+        )
+        
+        mixed, all_steps = pipeline.process(
             image_input=args.input,
-            use_alpha_blend=use_alpha,
             save_steps=args.save_steps,
             output_dir=args.steps_dir
         )
         
         # Save final result
-        import cv2
         cv2.imwrite(args.output, mixed)
         print(f"Success! Saved final image to '{args.output}'")
         

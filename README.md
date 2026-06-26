@@ -26,45 +26,44 @@ OpenCV 이미지 필터링과 Contour 분석 기술을 통해 스마트폰 카�
 
 ## 📂 디렉터리 구조 (Directory Structure)
 
-본 프로젝트는 핵심 알고리즘 라이브러리(`focuser.py`)를 중심으로 구동 환경(CLI, Jupyter Notebook)이 분리된 모듈식 구조를 가지고 있습니다.
+본 프로젝트는 핵심 알고리즘을 모듈화하여 확장성 있게 패키지화(`cafefocus/`)하고, CLI 실행 도구(`run.py`), 시각화 데모 스크립트(`food_focusing.py`)로 구성되어 있습니다.
 
 ```text
 Cafe-Focusing/
-├── focuser.py              # 핵심 아웃포커싱 알고리즘 구현 (CafeFocuser 클래스)
+├── cafefocus/              # 확장 가능한 아웃포커싱 핵심 패키지
+│   ├── __init__.py         # 패키지 진입점 (핵심 컴포넌트 Export)
+│   ├── pipeline.py         # 전체 포커싱 파이프라인 (ImageFocusPipeline)
+│   ├── detector.py         # 전경/피사체 탐지기 모듈 (Contour, Otsu 등)
+│   ├── background.py       # 배경 처리 모듈 (Blur, Desaturate, Darken 등)
+│   └── blender.py          # 합성/블렌더 모듈 (AlphaBlend, LegacyAnd)
 ├── run.py                  # CLI 명령줄 기반 아웃포커싱 실행 스크립트
 ├── requirements.txt        # 프로젝트 구동에 필요한 라이브러리 의존성 목록
-├── food_focusing.ipynb     # 인라인 차트 분석을 지원하는 인터랙티브 튜토리얼 노트북
+├── food_focusing.py        # 시각화 데모 및 튜토리얼 스크립트 (.ipynb 변환 완료)
 ├── README.md               # 프로젝트 상세 기술 명세서 및 가이드
 └── example_process_img/    # 예제 이미지 및 단계별 결과 예시 리소스 폴더
-    ├── food_solo.png       # 기본 테스트 대상 카페 음료 이미지
-    ├── gray.png            # 회색조 변환 이미지
-    ├── Canny_edge.png      # 기본 에지 검출 결과
-    ├── Canny_dilate.png    # 에지 팽창 처리 결과
-    ├── Canny_erode.png     # 에지 침식 처리 결과
-    ├── img_draw_contour.png# 검출된 다각형 외곽선 맵
-    ├── fill_mask.png       # 추출 영역 이진화 마스크
-    ├── mask_Gaussian.png   # 경계면 스무딩 처리된 마스크
-    └── mixed.png           # 최종 아웃포커싱 결과 예시
+    └── food_solo.png       # 기본 테스트 대상 카페 음료 이미지
 ```
 
 ### **구동 모듈 및 아키텍처 관계도**
 
 ```mermaid
-graph LR
-    User([사용자]) -->|1. CLI 인자 실행| Run[run.py]
-    User -->|2. 대화형 실행| NB[food_focusing.ipynb]
+graph TD
+    User([사용자]) -->|1. CLI 실행| Run[run.py]
+    User -->|2. 데모 실행| Demo[food_focusing.py]
     
-    subgraph Core Engine
-        Run -->|파라미터 주입| Focuser[focuser.py]
-        NB -->|클래스 임포트| Focuser
-        Focuser -->|Core Logic| CafeFocuser[CafeFocuser Class]
+    subgraph core_package ["Core Package (cafefocus)"]
+        Pipeline[pipeline.py: ImageFocusPipeline]
+        Detector[detector.py: BaseForegroundDetector]
+        Background[background.py: BaseBackgroundGenerator]
+        Blender[blender.py: BaseBlender]
+        
+        Pipeline --> Detector
+        Pipeline --> Background
+        Pipeline --> Blender
     end
-
-    subgraph Data I/O & Libraries
-        CafeFocuser -->|의존| CV[OpenCV & NumPy]
-        CafeFocuser -->|입력 로드 / 단계별 저장| ImgFolder[(example_process_img / steps)]
-        NB -->|인라인 렌더링| MP[Matplotlib]
-    end
+    
+    Run --> Pipeline
+    Demo --> Pipeline
 ```
 
 ---
@@ -141,20 +140,42 @@ graph LR
 
 ## 🛠️ 실행 및 사용 방법
 
-### **프로젝트 라이브러리 설치**
+### **프로젝트 라이브러리 및 가상환경 설정**
 ```bash
+# 가상환경 생성 및 활성화
+python -m venv .venv
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Mac/Linux:
+source .venv/bin/activate
+
+# 의존성 패키지 설치
 pip install -r requirements.txt
 ```
 
 ### **명령줄 실행 (CLI)**
+리팩터링을 통해 새롭게 추가된 다양한 전경 탐지 모드 및 배경 특수 효과를 CLI에서 활용할 수 있습니다.
 ```bash
-# 기본 사용 (알파 블렌딩 포커싱 결과가 focused_result.png 로 저장됩니다)
+# 1. 기본 실행 (알파 블렌딩 포커싱 결과가 focused_result.png 로 저장됩니다)
 python run.py example_process_img/food_solo.png
 
-# 상세 옵션 변경 (Canny 임계값 수정, 기존 legacy and 방식 사용 등)
-python run.py example_process_img/food_solo.png --canny-low 50 --canny-high 130 --legacy
+# 2. 전경 탐지기 교체 (Otsu thresholding 사용)
+python run.py example_process_img/food_solo.png --detector otsu
+
+# 3. 배경 특수 효과 적용 (배경 채도 감쇄 및 가우시안 블러 합성)
+python run.py example_process_img/food_solo.png --bg-effect desaturate --bg-blur-type gaussian --saturation 0.2
+
+# 4. 상세 단계별 이미지 저장과 함께 실행
+python run.py example_process_img/food_solo.png --save-steps --steps-dir my_processing_steps
 ```
 *(자세한 인자 사용법은 `python run.py --help` 명령어로 확인할 수 있습니다.)*
 
-### **Jupyter Notebook 활용**
-[food_focusing.ipynb](food_focusing.ipynb)를 실행하여 `focuser.py` 모듈 사용법과 시각화 단계를 인터랙티브하게 체험하실 수 있습니다.
+### **시각화 데모 및 튜토리얼 실행**
+기존 주피터 노트북 대신 독립 실행형 파이썬 스크립트인 `food_focusing.py`를 실행하여 다양한 블렌딩 방식 및 확장된 파이프라인(Otsu 탐지기 + 채도 감쇄 배경)의 결과를 시각화하고 결과 차트 이미지를 생성합니다.
+```bash
+python food_focusing.py
+```
+*실행 완료 시, 다음 결과 차트들이 루트 폴더에 자동 생성됩니다:*
+* `original_image_plot.png` (원본 이미지)
+* `focusing_comparison_result.png` (합성 기법 및 파이프라인별 비교 차트)
+* `pipeline_processing_steps.png` (상세 이미지 처리 8단계 시각화 차트)
