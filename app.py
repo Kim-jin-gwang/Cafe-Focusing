@@ -16,6 +16,14 @@ import cv2
 import numpy as np
 import gradio as gr
 
+try:
+    # Hugging Face ZeroGPU 환경에서는 @spaces.GPU 데코레이터가 최소 1개 필요
+    import spaces
+    _gpu = spaces.GPU
+except ImportError:  # 로컬 실행: 데코레이터를 no-op으로 대체
+    def _gpu(fn):
+        return fn
+
 from cafefocus.detector import ContourForegroundDetector, OtsuForegroundDetector
 from cafefocus.background import (
     BlurBackgroundGenerator,
@@ -55,6 +63,7 @@ def _to_rgb(img: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+@_gpu
 def focus_image(
     image,
     detector_name,
