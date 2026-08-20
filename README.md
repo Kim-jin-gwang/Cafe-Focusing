@@ -11,7 +11,7 @@ pinned: false
 
 # ☕ Cafe-Focusing
 
-> **🌐 Live Demo:** [Hugging Face Spaces](https://huggingface.co/spaces) 배포 준비 완료 — `python app.py`로 로컬 실행도 가능합니다.  
+> **🌐 Live Demo:** **[demo-gateway.trealight112.workers.dev/cafe-focusing](https://demo-gateway.trealight112.workers.dev/cafe-focusing/)** — 직접 이미지를 올려 체험해보세요!  
 > **Project Date:** 2021.10.18 ~ 2021.12.18  
 > **Collaborator:** @malangcongdduck  
 > **Refactored Date:** 2026.06.25  
@@ -36,6 +36,24 @@ OpenCV 이미지 필터링과 Contour 분석 기술을 통해 스마트폰 카�
 
 ---
 
+## 🌐 라이브 데모 아키텍처
+
+정적 호스팅과 연산 서버를 분리한 2-티어 구조로 서비스합니다.
+
+```text
+[커스텀 프론트엔드]                         [백엔드 API]
+Cloudflare (demo-gateway/cafe-focusing/) ──▶ Hugging Face Spaces (Gradio API)
+드래그앤드롭·Ctrl+V 입력,                     app.py — cafefocus 파이프라인을
+원본↔결과 비교 슬라이더,                      REST API로 노출 (CPU 실행)
+처리 단계 갤러리
+```
+
+- **프론트엔드**: [demo-gateway 저장소](https://github.com/Kim-jin-gwang/demo-gateway)의 `cafe-focusing/` — 브라우저에서 `@gradio/client`로 API 호출
+- **백엔드**: 이 저장소의 `app.py` → [HF Space `kimjgwang/cafe-focusing`](https://huggingface.co/spaces/kimjgwang/cafe-focusing) (Gradio 기본 UI로도 사용 가능)
+- **로컬 실행**: `pip install -r requirements.txt` 후 `python app.py` → http://localhost:7860
+
+---
+
 ## 📂 디렉터리 구조 (Directory Structure)
 
 본 프로젝트는 핵심 알고리즘을 모듈화하여 확장성 있게 패키지화(`cafefocus/`)하고, CLI 실행 도구(`run.py`), 시각화 데모 스크립트(`food_focusing.py`)로 구성되어 있습니다.
@@ -48,6 +66,7 @@ Cafe-Focusing/
 │   ├── detector.py         # 전경/피사체 탐지기 모듈 (Contour, Otsu 등)
 │   ├── background.py       # 배경 처리 모듈 (Blur, Desaturate, Darken 등)
 │   └── blender.py          # 합성/블렌더 모듈 (AlphaBlend, LegacyAnd)
+├── app.py                  # 라이브 데모용 Gradio 웹 UI / API 서버 (HF Spaces 배포)
 ├── run.py                  # CLI 명령줄 기반 아웃포커싱 실행 스크립트
 ├── requirements.txt        # 프로젝트 구동에 필요한 라이브러리 의존성 목록
 ├── food_focusing.py        # 시각화 데모 및 튜토리얼 스크립트 (.ipynb 변환 완료)
@@ -62,6 +81,7 @@ Cafe-Focusing/
 graph TD
     User([사용자]) -->|1. CLI 실행| Run[run.py]
     User -->|2. 데모 실행| Demo[food_focusing.py]
+    User -->|3. 웹 데모| App[app.py: Gradio UI/API]
     
     subgraph core_package ["Core Package (cafefocus)"]
         Pipeline[pipeline.py: ImageFocusPipeline]
@@ -76,6 +96,7 @@ graph TD
     
     Run --> Pipeline
     Demo --> Pipeline
+    App --> Pipeline
 ```
 
 ---
