@@ -1,5 +1,17 @@
+---
+title: Cafe Focusing
+emoji: ☕
+colorFrom: yellow
+colorTo: red
+sdk: gradio
+sdk_version: 6.25.0
+app_file: app.py
+pinned: false
+---
+
 # ☕ Cafe-Focusing
 
+> **🌐 Live Demo:** [Hugging Face Spaces](https://huggingface.co/spaces) 배포 준비 완료 — `python app.py`로 로컬 실행도 가능합니다.  
 > **Project Date:** 2021.10.18 ~ 2021.12.18  
 > **Collaborator:** @malangcongdduck  
 > **Refactored Date:** 2026.06.25  
