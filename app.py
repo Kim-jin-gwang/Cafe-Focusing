@@ -17,12 +17,16 @@ import numpy as np
 import gradio as gr
 
 try:
-    # Hugging Face ZeroGPU 환경에서는 @spaces.GPU 데코레이터가 최소 1개 필요
+    # ZeroGPU Space는 @spaces.GPU 함수가 최소 1개 있어야 기동됨.
+    # 실제 처리는 GPU가 불필요한 OpenCV 연산이므로 CPU에서 직접 실행하고
+    # (방문자별 ZeroGPU 쿼터를 소비하지 않도록), 기동 요건만 더미 함수로 충족.
     import spaces
-    _gpu = spaces.GPU
-except ImportError:  # 로컬 실행: 데코레이터를 no-op으로 대체
-    def _gpu(fn):
-        return fn
+
+    @spaces.GPU
+    def _zerogpu_startup_requirement():
+        return None
+except ImportError:  # 로컬 실행 환경
+    pass
 
 from cafefocus.detector import ContourForegroundDetector, OtsuForegroundDetector
 from cafefocus.background import (
@@ -63,7 +67,6 @@ def _to_rgb(img: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-@_gpu
 def focus_image(
     image,
     detector_name,
