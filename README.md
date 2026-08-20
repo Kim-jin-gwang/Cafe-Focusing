@@ -1,14 +1,3 @@
----
-title: Cafe Focusing
-emoji: ☕
-colorFrom: yellow
-colorTo: red
-sdk: gradio
-sdk_version: 6.25.0
-app_file: app.py
-pinned: false
----
-
 # ☕ Cafe-Focusing
 
 > **🌐 Live Demo:** **[demo-gateway.trealight112.workers.dev/cafe-focusing](https://demo-gateway.trealight112.workers.dev/cafe-focusing/)** — 직접 이미지를 올려 체험해보세요!  
@@ -49,7 +38,7 @@ Cloudflare (demo-gateway/cafe-focusing/) ──▶ Hugging Face Spaces (Gradio A
 ```
 
 - **프론트엔드**: [demo-gateway 저장소](https://github.com/Kim-jin-gwang/demo-gateway)의 `cafe-focusing/` — 브라우저에서 `@gradio/client`로 API 호출
-- **백엔드**: 이 저장소의 `app.py` → [HF Space `kimjgwang/cafe-focusing`](https://huggingface.co/spaces/kimjgwang/cafe-focusing) (Gradio 기본 UI로도 사용 가능)
+- **백엔드**: 이 저장소의 `app.py` 기반 → [HF Space `kimjgwang/ml-demos`](https://huggingface.co/spaces/kimjgwang/ml-demos) (HF 무료 티어 Space 개수 제한으로 GreenGlossary와 통합 호스팅)
 - **로컬 실행**: `pip install -r requirements.txt` 후 `python app.py` → http://localhost:7860
 
 ---
