@@ -59,9 +59,11 @@ Cafe-Focusing/
 │   └── blender.py          # 합성/블렌더 모듈 (AlphaBlend, LegacyAnd)
 ├── app.py                  # 라이브 데모용 Gradio 웹 UI / API 서버 (HF Spaces 배포)
 ├── run.py                  # CLI 명령줄 기반 아웃포커싱 실행 스크립트
+├── Dockerfile              # 도커 이미지 (docker run 한 번으로 데모 실행)
 ├── requirements.txt        # 프로젝트 구동에 필요한 라이브러리 의존성 목록
 ├── food_focusing.py        # 시각화 데모 및 튜토리얼 스크립트 (.ipynb 변환 완료)
 ├── README.md               # 프로젝트 상세 기술 명세서 및 가이드
+├── docs/                   # 프로젝트 소개 자료 (발표 pptx)
 └── example_process_img/    # 예제 이미지 및 단계별 결과 예시 리소스 폴더
     └── food_solo.png       # 기본 테스트 대상 카페 음료 이미지
 ```
