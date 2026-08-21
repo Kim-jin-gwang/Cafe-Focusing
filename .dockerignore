@@ -1,0 +1,12 @@
+.git
+__pycache__
+*.pyc
+.venv
+venv
+models/
+processing_steps/
+steps/
+food_focusing_introduce.pptx
+focused_result.png
+Dockerfile
+.dockerignore

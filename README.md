@@ -164,6 +164,13 @@ graph TD
 
 ## 🛠️ 실행 및 사용 방법
 
+### **도커로 실행 (권장 — 환경 설정 불필요)**
+```bash
+docker build -t cafe-focusing .
+docker run -p 7860:7860 cafe-focusing
+```
+→ http://localhost:7860 에서 Gradio 데모가 열립니다. AI 세그멘테이션 첫 사용 시 U2-Net 모델(~170MB)이 자동 다운로드됩니다.
+
 ### **프로젝트 라이브러리 및 가상환경 설정**
 ```bash
 # 가상환경 생성 및 활성화
