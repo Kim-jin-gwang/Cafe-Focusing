@@ -28,7 +28,12 @@ try:
 except ImportError:  # 로컬 실행 환경
     pass
 
-from cafefocus.detector import ContourForegroundDetector, OtsuForegroundDetector
+from cafefocus.detector import (
+    ContourForegroundDetector,
+    OtsuForegroundDetector,
+    GrabCutForegroundDetector,
+    AISegmentationDetector,
+)
 from cafefocus.background import (
     BlurBackgroundGenerator,
     DesaturateBackgroundGenerator,
@@ -38,23 +43,27 @@ from cafefocus.blender import AlphaBlender, LegacyAndBlender
 from cafefocus.pipeline import ImageFocusPipeline
 
 MAX_SIDE = 1600  # 데모 서버 보호: 큰 이미지는 축소 처리
+U2NET_PATH = os.path.join(BASE_DIR, "models", "u2net.onnx")
+BLUR_TYPE_MAP = {"평균": "average", "가우시안": "gaussian", "보케": "bokeh"}
 
 STEP_LABELS = {
     "original": "원본",
     "gray": "그레이스케일",
-    "canny": "Canny 엣지",
-    "edges": "Canny 엣지",
-    "dilate": "팽창(dilate)",
-    "erode": "침식(erode)",
-    "contour": "윤곽선",
+    "canny_edge": "Canny 엣지",
+    "canny_dilate": "엣지 팽창",
+    "canny_erode": "엣지 침식",
+    "img_draw_contour": "최대 윤곽선",
     "fill_mask": "채운 마스크",
     "mask_dilate": "마스크 팽창",
     "mask_erode": "마스크 침식",
-    "mask_blur": "마스크 블러",
-    "mask": "최종 마스크",
-    "otsu": "Otsu 이진화",
-    "blur": "배경 블러",
-    "bg": "배경 처리 결과",
+    "mask_gaussian": "마스크 스무딩",
+    "otsu_blur": "노이즈 제거 블러",
+    "otsu_threshold": "Otsu 이진화",
+    "grabcut_rect": "지정 영역 (GrabCut)",
+    "img_blur": "배경 블러",
+    "bg_desaturate": "배경 채도 감소",
+    "bg_darken": "배경 어둡게",
+    "only_coffee": "피사체 추출",
     "mixed": "최종 결과",
 }
 
@@ -82,6 +91,10 @@ def focus_image(
     brightness,
     legacy_blend,
     show_steps,
+    gc_x=10.0,
+    gc_y=10.0,
+    gc_w=80.0,
+    gc_h=80.0,
 ):
     if image is None:
         raise gr.Error("이미지를 먼저 업로드해주세요.")
@@ -107,11 +120,20 @@ def focus_image(
             mask_erode_iter=int(mask_erode),
             mask_blur_size=(mask_blur, mask_blur),
         )
+    elif detector_name == "AI 세그멘테이션 (U2-Net)":
+        detector = AISegmentationDetector(
+            model_path=U2NET_PATH, mask_blur_size=(mask_blur, mask_blur),
+        )
+    elif detector_name == "GrabCut (박스 지정)":
+        detector = GrabCutForegroundDetector(
+            rect=(float(gc_x) / 100, float(gc_y) / 100, float(gc_w) / 100, float(gc_h) / 100),
+            mask_blur_size=(mask_blur, mask_blur),
+        )
     else:
         detector = OtsuForegroundDetector(mask_blur_size=(mask_blur, mask_blur))
 
     base_blur = BlurBackgroundGenerator(
-        blur_type="gaussian" if blur_type == "가우시안" else "average",
+        blur_type=BLUR_TYPE_MAP.get(blur_type, "average"),
         blur_size=(bg_blur, bg_blur),
     )
     if bg_effect == "블러":
@@ -157,13 +179,14 @@ with gr.Blocks(title="Cafe-Focusing") as demo:
         with gr.Column(scale=1):
             input_image = gr.Image(label="입력 이미지", type="numpy")
             detector_name = gr.Radio(
-                ["윤곽선 (Contour)", "Otsu 이진화"], value="윤곽선 (Contour)", label="피사체 검출 방식"
+                ["AI 세그멘테이션 (U2-Net)", "윤곽선 (Contour)", "Otsu 이진화", "GrabCut (박스 지정)"],
+                value="AI 세그멘테이션 (U2-Net)", label="피사체 검출 방식",
             )
             bg_effect = gr.Radio(["블러", "채도 감소", "어둡게"], value="블러", label="배경 효과")
             run_btn = gr.Button("아웃포커싱 적용", variant="primary")
 
             with gr.Accordion("고급 설정", open=False):
-                blur_type = gr.Radio(["평균", "가우시안"], value="평균", label="블러 종류")
+                blur_type = gr.Radio(["평균", "가우시안", "보케"], value="평균", label="블러 종류")
                 canny_low = gr.Slider(0, 255, value=40, step=1, label="Canny 하한 임계값")
                 canny_high = gr.Slider(0, 255, value=150, step=1, label="Canny 상한 임계값")
                 mask_dilate = gr.Slider(0, 30, value=10, step=1, label="마스크 팽창 반복 횟수")
@@ -174,6 +197,11 @@ with gr.Blocks(title="Cafe-Focusing") as demo:
                 brightness = gr.Slider(0.0, 1.0, value=0.6, step=0.05, label="밝기 (어둡게 효과)")
                 legacy_blend = gr.Checkbox(value=False, label="레거시 블렌딩 (bitwise AND)")
                 show_steps = gr.Checkbox(value=True, label="중간 처리 단계 보기")
+                gr.Markdown("GrabCut 박스 (이미지 대비 %)")
+                gc_x = gr.Slider(0, 95, value=10, step=1, label="박스 X")
+                gc_y = gr.Slider(0, 95, value=10, step=1, label="박스 Y")
+                gc_w = gr.Slider(2, 100, value=80, step=1, label="박스 너비")
+                gc_h = gr.Slider(2, 100, value=80, step=1, label="박스 높이")
 
         with gr.Column(scale=1):
             output_image = gr.Image(label="아웃포커싱 결과")
@@ -183,6 +211,7 @@ with gr.Blocks(title="Cafe-Focusing") as demo:
         input_image, detector_name, bg_effect, blur_type,
         canny_low, canny_high, mask_dilate, mask_erode, mask_blur, bg_blur,
         saturation, brightness, legacy_blend, show_steps,
+        gc_x, gc_y, gc_w, gc_h,
     ]
     run_btn.click(focus_image, inputs=inputs, outputs=[output_image, steps_gallery])
 

@@ -26,29 +26,47 @@ class BaseBackgroundGenerator(ABC):
 
 class BlurBackgroundGenerator(BaseBackgroundGenerator):
     """
-    Blurs the background using either Average Blur or Gaussian Blur.
+    Blurs the background using Average Blur, Gaussian Blur, or a
+    disc-kernel Bokeh blur that mimics real camera lens defocus
+    (bright points spread into circular highlights).
     """
     def __init__(
         self,
         blur_type: str = 'average',
         blur_size: Tuple[int, int] = (13, 13)
     ):
-        if blur_type not in ('average', 'gaussian'):
-            raise ValueError("blur_type must be either 'average' or 'gaussian'")
+        if blur_type not in ('average', 'gaussian', 'bokeh'):
+            raise ValueError("blur_type must be 'average', 'gaussian', or 'bokeh'")
         self.blur_type = blur_type
         self.blur_size = blur_size
 
+    @staticmethod
+    def _disc_kernel(diameter: int) -> np.ndarray:
+        """Circular (disc) convolution kernel — the aperture shape of a lens."""
+        diameter = max(3, diameter | 1)  # odd, >= 3
+        r = diameter // 2
+        y, x = np.ogrid[-r:r + 1, -r:r + 1]
+        kernel = ((x * x + y * y) <= r * r).astype(np.float32)
+        return kernel / kernel.sum()
+
     def generate(self, img: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         steps = {}
-        
+
         if self.blur_type == 'average':
             blurred_bg = cv2.blur(img, self.blur_size)
+        elif self.blur_type == 'bokeh':
+            # Boost highlights in near-linear light before the disc filter so
+            # bright spots bloom into circles instead of averaging away.
+            kernel = self._disc_kernel(self.blur_size[0])
+            linear = (img.astype(np.float32) / 255.0) ** 3.0
+            blurred = cv2.filter2D(linear, -1, kernel)
+            blurred_bg = (np.clip(blurred, 0.0, 1.0) ** (1.0 / 3.0) * 255.0).astype(np.uint8)
         else: # gaussian
             # Ensure odd numbers for gaussian kernel size
             kernel_x = self.blur_size[0] + 1 if self.blur_size[0] % 2 == 0 else self.blur_size[0]
             kernel_y = self.blur_size[1] + 1 if self.blur_size[1] % 2 == 0 else self.blur_size[1]
             blurred_bg = cv2.GaussianBlur(img, (kernel_x, kernel_y), 0)
-            
+
         steps['img_blur'] = blurred_bg.copy()
         return blurred_bg, steps
 

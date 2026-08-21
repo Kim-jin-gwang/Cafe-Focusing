@@ -104,3 +104,6 @@ steps/
 
 # But KEEP the example resources folder
 !example_process_img/
+
+# U2-Net ONNX model (auto-downloaded on first use)
+models/

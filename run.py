@@ -3,7 +3,12 @@ import sys
 import os
 import cv2
 
-from cafefocus.detector import ContourForegroundDetector, OtsuForegroundDetector
+from cafefocus.detector import (
+    ContourForegroundDetector,
+    OtsuForegroundDetector,
+    GrabCutForegroundDetector,
+    AISegmentationDetector,
+)
 from cafefocus.background import BlurBackgroundGenerator, DesaturateBackgroundGenerator, DarkenBackgroundGenerator
 from cafefocus.blender import AlphaBlender, LegacyAndBlender
 from cafefocus.pipeline import ImageFocusPipeline
@@ -48,9 +53,16 @@ def main():
     parser.add_argument(
         "--detector",
         type=str,
-        choices=["contour", "otsu"],
+        choices=["contour", "otsu", "ai", "grabcut"],
         default="contour",
-        help="Foreground detection method to use (default: contour)"
+        help="Foreground detection method: contour, otsu, ai (U2-Net, requires onnxruntime), "
+             "or grabcut with --grabcut-rect (default: contour)"
+    )
+    parser.add_argument(
+        "--grabcut-rect",
+        type=str,
+        default="0.1,0.1,0.8,0.8",
+        help="GrabCut bounding box as normalized 'x,y,w,h' (default: 0.1,0.1,0.8,0.8)"
     )
     
     # Background effect configuration
@@ -64,7 +76,7 @@ def main():
     parser.add_argument(
         "--bg-blur-type",
         type=str,
-        choices=["average", "gaussian"],
+        choices=["average", "gaussian", "bokeh"],
         default="average",
         help="Type of blur to apply to background (default: average)"
     )
@@ -143,6 +155,24 @@ def main():
             canny_high=args.canny_high,
             mask_dilate_iter=args.mask_dilate,
             mask_erode_iter=args.mask_erode,
+            mask_blur_size=(args.mask_blur, args.mask_blur)
+        )
+    elif args.detector == "ai":
+        print(f"  - Detector: AISegmentationDetector (U2-Net, CPU)")
+        detector = AISegmentationDetector(
+            mask_blur_size=(args.mask_blur, args.mask_blur)
+        )
+    elif args.detector == "grabcut":
+        try:
+            rect = tuple(float(v) for v in args.grabcut_rect.split(","))
+            if len(rect) != 4:
+                raise ValueError
+        except ValueError:
+            print("Error: --grabcut-rect must be 'x,y,w,h' normalized floats.", file=sys.stderr)
+            sys.exit(1)
+        print(f"  - Detector: GrabCutForegroundDetector (rect: {rect})")
+        detector = GrabCutForegroundDetector(
+            rect=rect,
             mask_blur_size=(args.mask_blur, args.mask_blur)
         )
     else: # otsu

@@ -109,6 +109,137 @@ class ContourForegroundDetector(BaseForegroundDetector):
         return mask, steps
 
 
+class GrabCutForegroundDetector(BaseForegroundDetector):
+    """
+    GrabCut-based foreground detector.
+    The user supplies a bounding box around the subject (normalized 0~1
+    coordinates), and GrabCut iteratively separates foreground from
+    background inside it. Useful when automatic detection picks the
+    wrong subject.
+    """
+    def __init__(
+        self,
+        rect: Tuple[float, float, float, float] = (0.1, 0.1, 0.8, 0.8),
+        iter_count: int = 5,
+        mask_blur_size: Tuple[int, int] = (21, 21)
+    ):
+        self.rect = rect
+        self.iter_count = iter_count
+        self.mask_blur_size = mask_blur_size
+
+    def detect(self, img: np.ndarray) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        steps = {}
+        h, w = img.shape[:2]
+
+        rx, ry, rw, rh = self.rect
+        x = int(np.clip(rx, 0.0, 0.95) * w)
+        y = int(np.clip(ry, 0.0, 0.95) * h)
+        bw = int(np.clip(rw, 0.02, 1.0) * w)
+        bh = int(np.clip(rh, 0.02, 1.0) * h)
+        bw = min(bw, w - x - 1)
+        bh = min(bh, h - y - 1)
+        if bw < 10 or bh < 10:
+            raise ValueError("GrabCut box is too small. Drag a larger box around the subject.")
+
+        rect_vis = img.copy()
+        cv2.rectangle(rect_vis, (x, y), (x + bw, y + bh), (0, 255, 0), 3)
+        steps['grabcut_rect'] = rect_vis
+
+        gc_mask = np.zeros((h, w), dtype=np.uint8)
+        bgd_model = np.zeros((1, 65), dtype=np.float64)
+        fgd_model = np.zeros((1, 65), dtype=np.float64)
+        cv2.grabCut(img, gc_mask, (x, y, bw, bh), bgd_model, fgd_model,
+                    self.iter_count, cv2.GC_INIT_WITH_RECT)
+
+        mask = np.where(
+            (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
+        ).astype(np.uint8)
+        if int(mask.sum()) == 0:
+            raise ValueError("GrabCut could not find a subject inside the box. Try a tighter box.")
+        steps['fill_mask'] = mask.copy()
+
+        if self.mask_blur_size[0] > 0 and self.mask_blur_size[1] > 0:
+            mask = cv2.GaussianBlur(mask, self.mask_blur_size, 0)
+            steps['mask_gaussian'] = mask.copy()
+
+        return mask, steps
+
+
+class AISegmentationDetector(BaseForegroundDetector):
+    """
+    Deep-learning foreground detector using U2-Net salient object
+    detection, run on CPU through onnxruntime. Produces far more
+    accurate masks than classical edge/threshold methods on photos
+    with complex backgrounds.
+
+    The ONNX model (~170MB) is downloaded once to `model_path` on
+    first use. Requires the optional `onnxruntime` dependency.
+    """
+    MODEL_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx"
+    INPUT_SIZE = 320
+    _session_cache: Dict[str, Any] = {}
+
+    def __init__(
+        self,
+        model_path: str = "models/u2net.onnx",
+        mask_threshold: float = 0.0,
+        mask_blur_size: Tuple[int, int] = (21, 21)
+    ):
+        self.model_path = model_path
+        self.mask_threshold = mask_threshold
+        self.mask_blur_size = mask_blur_size
+
+    def _get_session(self):
+        session = self._session_cache.get(self.model_path)
+        if session is not None:
+            return session
+        try:
+            import onnxruntime as ort
+        except ImportError as exc:
+            raise RuntimeError(
+                "AISegmentationDetector requires onnxruntime: pip install onnxruntime"
+            ) from exc
+
+        import os
+        if not os.path.isfile(self.model_path):
+            os.makedirs(os.path.dirname(self.model_path) or ".", exist_ok=True)
+            import urllib.request
+            print(f"[AISegmentationDetector] downloading U2-Net model to {self.model_path} ...")
+            urllib.request.urlretrieve(self.MODEL_URL, self.model_path)
+
+        session = ort.InferenceSession(self.model_path, providers=["CPUExecutionProvider"])
+        self._session_cache[self.model_path] = session
+        return session
+
+    def detect(self, img: np.ndarray) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        steps = {}
+        session = self._get_session()
+        h, w = img.shape[:2]
+
+        # U2-Net preprocessing: 320x320 RGB, ImageNet mean/std normalization
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(rgb, (self.INPUT_SIZE, self.INPUT_SIZE), interpolation=cv2.INTER_AREA)
+        x = resized.astype(np.float32) / np.max(resized).clip(min=1)
+        x = (x - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / \
+            np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        x = x.transpose(2, 0, 1)[np.newaxis, ...]
+
+        input_name = session.get_inputs()[0].name
+        pred = session.run(None, {input_name: x})[0][0, 0]  # d0 saliency map
+
+        pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-8)
+        if self.mask_threshold > 0:
+            pred = np.where(pred >= self.mask_threshold, pred, 0.0)
+        mask = cv2.resize((pred * 255).astype(np.uint8), (w, h), interpolation=cv2.INTER_LINEAR)
+        steps['fill_mask'] = mask.copy()
+
+        if self.mask_blur_size[0] > 0 and self.mask_blur_size[1] > 0:
+            mask = cv2.GaussianBlur(mask, self.mask_blur_size, 0)
+            steps['mask_gaussian'] = mask.copy()
+
+        return mask, steps
+
+
 class OtsuForegroundDetector(BaseForegroundDetector):
     """
     Otsu thresholding-based foreground detector.

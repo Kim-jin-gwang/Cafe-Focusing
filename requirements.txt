@@ -2,3 +2,4 @@ opencv-python-headless>=4.5.0
 numpy>=1.20.0
 matplotlib>=3.3.0
 gradio>=4.0.0
+onnxruntime>=1.17.0  # AI 세그멘테이션 (U2-Net CPU 추론) — 모델은 첫 사용 시 자동 다운로드

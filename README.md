@@ -7,6 +7,8 @@
 
 OpenCV 이미지 필터링과 Contour 분석 기술을 통해 스마트폰 카메라의 일반적인 원형 포커싱 필터 한계를 넘어서서, 카페 음료나 제과류 등 비정형 피사체의 외곽선을 정교하게 찾아내어 배경을 흐리게(Out-focusing) 만드는 라이브러리 및 도구입니다.
 
+**2026.08 확장:** 고전 CV 검출기(윤곽선·Otsu)에 더해 **U2-Net 딥러닝 세그멘테이션**(onnxruntime CPU 추론)과 **GrabCut 박스 지정 모드**를 추가해 복잡한 배경에서도 정확한 피사체 분리가 가능해졌고, 원형 커널 기반 **보케(Bokeh) 블러**로 실제 카메라 렌즈의 빛망울 효과를 재현할 수 있습니다. 라이브 데모에서 네 가지 검출 방식을 같은 이미지로 비교해보세요.
+
 ---
 
 ## 📖 프로젝트 개요
@@ -52,8 +54,8 @@ Cafe-Focusing/
 ├── cafefocus/              # 확장 가능한 아웃포커싱 핵심 패키지
 │   ├── __init__.py         # 패키지 진입점 (핵심 컴포넌트 Export)
 │   ├── pipeline.py         # 전체 포커싱 파이프라인 (ImageFocusPipeline)
-│   ├── detector.py         # 전경/피사체 탐지기 모듈 (Contour, Otsu 등)
-│   ├── background.py       # 배경 처리 모듈 (Blur, Desaturate, Darken 등)
+│   ├── detector.py         # 전경/피사체 탐지기 모듈 (Contour, Otsu, GrabCut, U2-Net AI)
+│   ├── background.py       # 배경 처리 모듈 (Blur/Bokeh, Desaturate, Darken 등)
 │   └── blender.py          # 합성/블렌더 모듈 (AlphaBlend, LegacyAnd)
 ├── app.py                  # 라이브 데모용 Gradio 웹 UI / API 서버 (HF Spaces 배포)
 ├── run.py                  # CLI 명령줄 기반 아웃포커싱 실행 스크립트
@@ -187,7 +189,13 @@ python run.py example_process_img/food_solo.png --detector otsu
 # 3. 배경 특수 효과 적용 (배경 채도 감쇄 및 가우시안 블러 합성)
 python run.py example_process_img/food_solo.png --bg-effect desaturate --bg-blur-type gaussian --saturation 0.2
 
-# 4. 상세 단계별 이미지 저장과 함께 실행
+# 4. AI 세그멘테이션 (U2-Net) + 보케 블러 — 첫 실행 시 모델(~170MB) 자동 다운로드
+python run.py example_process_img/food_solo.png --detector ai --bg-blur-type bokeh --bg-blur 25
+
+# 5. GrabCut 박스 지정 (이미지 대비 정규화 좌표 x,y,w,h)
+python run.py example_process_img/food_solo.png --detector grabcut --grabcut-rect 0.2,0.15,0.6,0.7
+
+# 6. 상세 단계별 이미지 저장과 함께 실행
 python run.py example_process_img/food_solo.png --save-steps --steps-dir my_processing_steps
 ```
 *(자세한 인자 사용법은 `python run.py --help` 명령어로 확인할 수 있습니다.)*
